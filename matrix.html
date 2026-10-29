@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Risikovurderingsmatrix</title>
+  <style>
+    :root {
+      /* The risk hues follow the reference, darkened to keep white score text highly legible. */
+      --navy: #101827;
+      --navy-deep: #0a091a;
+      --ink: #101827;
+      --paper: #ffffff;
+      --page: #f3f5f7;
+      --grid: #c9cfd8;
+      --neutral: #d4d8df;
+      --neutral-text: #101827;
+      --green-low: #104d2c;
+      --green: #17623b;
+      --gold: #705500;
+      --orange: #843500;
+      --red: #842226;
+      --focus: #ffffff;
+      --space: clamp(0.75rem, 2vw, 1.5rem);
+      --radius: 0.35rem;
+      --body-size: 1rem;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font: 400 var(--body-size)/1.5 Arial, Helvetica, sans-serif;
+    }
+    main {
+      width: min(100%, 1800px);
+      margin-inline: auto;
+      padding: clamp(0.75rem, 1.5vw, 1.5rem);
+    }
+    .page-heading {
+      margin: 0 0 0.3rem;
+      color: var(--navy);
+      font-size: clamp(1.35rem, 2.1vw, 2rem);
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    .intro {
+      margin: 0 0 1rem;
+      color: #303a49;
+      font-size: 1rem;
+    }
+    .matrix-scroll {
+      width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      border: 1px solid var(--grid);
+      background: var(--paper);
+      scrollbar-gutter: stable;
+    }
+    .matrix-scroll:focus-visible {
+      outline: 3px solid var(--navy);
+      outline-offset: 3px;
+    }
+    table {
+      width: 100%;
+      min-width: 0;
+      table-layout: fixed;
+      border-collapse: collapse;
+      border-spacing: 0;
+      background: var(--paper);
+    }
+    col.likelihood-label { width: 22.3%; }
+    col.likelihood-value { width: 8.3%; }
+    col.consequence { width: 23.1333%; }
+
+    caption {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .sr-only {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+    th, td {
+      padding: 0;
+      border: 2px solid var(--grid);
+      text-align: center;
+      vertical-align: middle;
+    }
+    tbody tr.risk-row { height: clamp(128px, 12.15vw, 202px); }
+    tbody tr.point-row { height: clamp(88px, 8.1vw, 133px); }
+    tfoot tr { height: clamp(135px, 12.5vw, 207px); }
+
+    .likelihood-name {
+      background: var(--navy-deep);
+      color: #fff;
+      font-size: clamp(1.2rem, 2vw, 2rem);
+      font-weight: 400;
+      text-align: center;
+      padding: 0.5rem;
+    }
+    .likelihood-value {
+      background: var(--neutral);
+      color: var(--neutral-text);
+      font-size: clamp(1.2rem, 1.8vw, 1.8rem);
+      font-weight: 400;
+    }
+
+    /* The whole score cell is a button; it remains a real table cell for relationships. */
+    .score-cell { position: relative; padding: 0; background: var(--risk-color); }
+    .score {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      padding: 0.7rem;
+      border: 0;
+      border-radius: 0;
+      background: var(--risk-color);
+      color: #fff;
+      font: inherit;
+      font-size: clamp(1.35rem, 2vw, 2rem);
+      line-height: 1.15;
+      font-weight: 500;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .score:hover:not([aria-pressed="true"]) {
+      text-decoration: underline;
+      text-decoration-thickness: 2px;
+      text-underline-offset: 0.18em;
+    }
+    .score:active { text-decoration-thickness: 3px; }
+    .score[aria-pressed="true"] {
+      box-shadow: inset 0 0 0 5px #fff, inset 0 0 0 9px var(--navy);
+    }
+    .score:focus-visible {
+      z-index: 1;
+      outline: 4px solid #fff;
+      outline-offset: -8px;
+      box-shadow: inset 0 0 0 8px var(--navy);
+    }
+    .score[aria-pressed="true"]:focus-visible {
+      outline: 4px solid #fff;
+      outline-offset: -8px;
+      box-shadow: inset 0 0 0 5px #fff, inset 0 0 0 9px var(--navy);
+    }
+
+    .score-2 { --risk-color: var(--green-low); }
+    .score-3 { --risk-color: var(--green); }
+    .score-4 { --risk-color: var(--gold); }
+    .score-5 { --risk-color: var(--orange); }
+    .score-6 { --risk-color: var(--red); }
+
+    .point-empty, .corner-spacer {
+      background: var(--navy-deep);
+    }
+    .point-label, .point-value {
+      background: var(--neutral);
+      color: var(--neutral-text);
+      font-size: clamp(1.1rem, 1.8vw, 1.8rem);
+      font-weight: 400;
+    }
+    .point-value { font-size: clamp(1.3rem, 2vw, 2rem); }
+
+    .diagonal-cell {
+      position: relative;
+      overflow: hidden;
+      padding: 0;
+      background: var(--navy-deep);
+      color: #fff;
+    }
+    /* SVG is stretched to the cell's exact aspect ratio, so its diagonal
+       always connects the bottom-left and top-right corners at every size. */
+    .diagonal-divider {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .diagonal-word {
+      position: absolute;
+      display: block;
+      width: max-content;
+      max-width: none;
+      color: #f5f7fa;
+      font-size: clamp(0.95rem, 1.75vw, 1.8rem);
+      font-weight: 400;
+      line-height: 1.2;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 1;
+      text-align: center;
+    }
+    /* The text anchor is at each triangle's centroid (one-third / two-thirds).
+       The text remains parallel to the divider and moves with the cell. */
+    .diagonal-word.top {
+      left: 33.3333%;
+      top: 33.3333%;
+      transform: translate(-50%, -50%) rotate(var(--diagonal-angle, -30.8deg));
+    }
+    .diagonal-word.bottom {
+      left: 66.6667%;
+      top: 66.6667%;
+      transform: translate(-50%, -50%) rotate(var(--diagonal-angle, -30.8deg));
+    }
+    .consequence-heading {
+      padding: 1rem 0.65rem;
+      background: var(--navy-deep);
+      color: #fff;
+      font-size: clamp(1rem, 1.7vw, 1.75rem);
+      font-weight: 500;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      hyphens: none;
+    }
+    .consequence-heading span { display: block; }
+    .blank-heading { background: var(--navy-deep); }
+
+    .assessment {
+      --assessment-risk: var(--navy);
+      margin-top: 1rem;
+      padding: clamp(0.9rem, 1.6vw, 1.35rem);
+      border: 1px solid #abb5c2;
+      border-left: 5px solid var(--assessment-risk);
+      background: var(--paper);
+    }
+    /* The result uses the selected score's risk hue; wording also states the
+       action directly, so the meaning is never conveyed by color alone. */
+    .assessment[data-score="2"] { --assessment-risk: var(--green-low); }
+    .assessment[data-score="3"] { --assessment-risk: var(--green); }
+    .assessment[data-score="4"] { --assessment-risk: var(--gold); }
+    .assessment[data-score="5"] { --assessment-risk: var(--orange); }
+    .assessment[data-score="6"] { --assessment-risk: var(--red); }
+    .assessment-action {
+      display: block;
+      margin: 0.8rem 0 0;
+      padding: 0.8rem 1rem;
+      background: var(--assessment-risk);
+      color: #fff;
+      font-weight: 700;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .assessment h2 {
+      margin: 0 0 0.35rem;
+      color: var(--navy);
+      font-size: 1.2rem;
+      line-height: 1.35;
+    }
+    .assessment-copy { margin: 0; color: #263244; }
+    .assessment-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin: 0.8rem 0 0;
+    }
+    .assessment-grid > div { min-width: 0; }
+    .assessment-grid dt {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #303a49;
+    }
+    .assessment-grid dd {
+      margin: 0.15rem 0 0;
+      font-size: 1.05rem;
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+    .assessment-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-top: 1rem;
+    }
+    .key-hint { margin: 0; color: #303a49; font-size: 0.9rem; }
+    .clear-button {
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0.65rem 1rem;
+      border: 2px solid var(--navy);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--navy);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .clear-button:hover:not(:disabled) { background: #edf0f4; }
+    .clear-button:focus-visible {
+      outline: 3px solid var(--navy);
+      outline-offset: 3px;
+    }
+    .clear-button:disabled { cursor: not-allowed; color: #555e6a; border-color: #707b89; }
+    .aaa-note {
+      margin: 0.8rem 0 0;
+      color: #303a49;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 767px) {
+      main { padding: 0.7rem; }
+      .intro { margin-bottom: 0.75rem; }
+      /* Preserve readable cells under 768px; scroll instead of squeezing. */
+      table { min-width: 960px; }
+      tbody tr.risk-row { height: 142px; }
+      tbody tr.point-row { height: 92px; }
+      tfoot tr { height: 150px; }
+      .assessment-grid { grid-template-columns: 1fr; gap: 0.65rem; }
+      .assessment-actions { align-items: stretch; }
+      .clear-button { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+    }
+    @media (forced-colors: active) {
+      .score { border: 1px solid ButtonText; }
+      .score[aria-pressed="true"] { outline: 4px solid Highlight; outline-offset: -6px; }
+      .diagonal-cell::before { background: CanvasText; }
+      .assessment { border-color: CanvasText; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1 class="page-heading">Risikovurderingsmatrix</h1>
+      <p class="intro" id="matrix-instructions">Vælg et farvet felt for at registrere en vurdering. Brug piletasterne til at flytte mellem felterne.</p>
+    </header>
+
+    <div class="matrix-scroll" tabindex="0" aria-label="Risikomatrix. På små skærme kan tabellen rulles vandret.">
+      <table aria-describedby="matrix-instructions">
+        <caption>Risikovurderingsmatrix med sandsynlighed, konsekvens og score.</caption>
+        <colgroup>
+          <col class="likelihood-label">
+          <col class="likelihood-value">
+          <col class="consequence">
+          <col class="consequence">
+          <col class="consequence">
+        </colgroup>
+        <thead class="sr-only">
+          <tr>
+            <th scope="col">Sandsynlighed</th>
+            <th scope="col">Sandsynlighedens point</th>
+            <th scope="col">Mindre arbejdsmiljø-udfordring, konsekvenspoint 1</th>
+            <th scope="col">Moderat arbejdsmiljø-udfordring, konsekvenspoint 2</th>
+            <th scope="col">Alvorlig arbejdsmiljø-udfordring, konsekvenspoint 3</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="risk-row">
+            <th class="likelihood-name" scope="row">Høj</th>
+            <td class="likelihood-value">3</td>
+            <td class="score-cell score-4">
+              <button class="score score-4" type="button" aria-pressed="false"
+                aria-label="Score 4. Sandsynlighed: Høj, niveau 3. Konsekvens: Mindre arbejdsmiljø-udfordring, point 1."
+                data-score="4" data-likelihood="Høj" data-likelihood-level="3"
+                data-consequence="Mindre arbejdsmiljø-udfordring" data-consequence-point="1">4</button>
+            </td>
+            <td class="score-cell score-5">
+              <button class="score score-5" type="button" aria-pressed="false"
+                aria-label="Score 5. Sandsynlighed: Høj, niveau 3. Konsekvens: Moderat arbejdsmiljø-udfordring, point 2."
+                data-score="5" data-likelihood="Høj" data-likelihood-level="3"
+                data-consequence="Moderat arbejdsmiljø-udfordring" data-consequence-point="2">5</button>
+            </td>
+            <td class="score-cell score-6">
+              <button class="score score-6" type="button" aria-pressed="false"
+                aria-label="Score 6. Sandsynlighed: Høj, niveau 3. Konsekvens: Alvorlig arbejdsmiljø-udfordring, point 3."
+                data-score="6" data-likelihood="Høj" data-likelihood-level="3"
+                data-consequence="Alvorlig arbejdsmiljø-udfordring" data-consequence-point="3">6</button>
+            </td>
+          </tr>
+          <tr class="risk-row">
+            <th class="likelihood-name" scope="row">Moderat</th>
+            <td class="likelihood-value">2</td>
+            <td class="score-cell score-3">
+              <button class="score score-3" type="button" aria-pressed="false"
+                aria-label="Score 3. Sandsynlighed: Moderat, niveau 2. Konsekvens: Mindre arbejdsmiljø-udfordring, point 1."
+                data-score="3" data-likelihood="Moderat" data-likelihood-level="2"
+                data-consequence="Mindre arbejdsmiljø-udfordring" data-consequence-point="1">3</button>
+            </td>
+            <td class="score-cell score-4">
+              <button class="score score-4" type="button" aria-pressed="false"
+                aria-label="Score 4. Sandsynlighed: Moderat, niveau 2. Konsekvens: Moderat arbejdsmiljø-udfordring, point 2."
+                data-score="4" data-likelihood="Moderat" data-likelihood-level="2"
+                data-consequence="Moderat arbejdsmiljø-udfordring" data-consequence-point="2">4</button>
+            </td>
+            <td class="score-cell score-5">
+              <button class="score score-5" type="button" aria-pressed="false"
+                aria-label="Score 5. Sandsynlighed: Moderat, niveau 2. Konsekvens: Alvorlig arbejdsmiljø-udfordring, point 3."
+                data-score="5" data-likelihood="Moderat" data-likelihood-level="2"
+                data-consequence="Alvorlig arbejdsmiljø-udfordring" data-consequence-point="3">5</button>
+            </td>
+          </tr>
+          <tr class="risk-row">
+            <th class="likelihood-name" scope="row">Lav</th>
+            <td class="likelihood-value">1</td>
+            <td class="score-cell score-2">
+              <button class="score score-2" type="button" aria-pressed="false"
+                aria-label="Score 2. Sandsynlighed: Lav, niveau 1. Konsekvens: Mindre arbejdsmiljø-udfordring, point 1."
+                data-score="2" data-likelihood="Lav" data-likelihood-level="1"
+                data-consequence="Mindre arbejdsmiljø-udfordring" data-consequence-point="1">2</button>
+            </td>
+            <td class="score-cell score-3">
+              <button class="score score-3" type="button" aria-pressed="false"
+                aria-label="Score 3. Sandsynlighed: Lav, niveau 1. Konsekvens: Moderat arbejdsmiljø-udfordring, point 2."
+                data-score="3" data-likelihood="Lav" data-likelihood-level="1"
+                data-consequence="Moderat arbejdsmiljø-udfordring" data-consequence-point="2">3</button>
+            </td>
+            <td class="score-cell score-4">
+              <button class="score score-4" type="button" aria-pressed="false"
+                aria-label="Score 4. Sandsynlighed: Lav, niveau 1. Konsekvens: Alvorlig arbejdsmiljø-udfordring, point 3."
+                data-score="4" data-likelihood="Lav" data-likelihood-level="1"
+                data-consequence="Alvorlig arbejdsmiljø-udfordring" data-consequence-point="3">4</button>
+            </td>
+          </tr>
+          <tr class="point-row">
+            <td class="point-empty" aria-hidden="true"></td>
+            <th class="point-label" scope="row">Point</th>
+            <td class="point-value">1</td>
+            <td class="point-value">2</td>
+            <td class="point-value">3</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="diagonal-cell">
+              <svg class="diagonal-divider" viewBox="0 0 100 100"
+                   preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <line x1="0" y1="100" x2="100" y2="0"
+                      stroke="#dce1e8" stroke-width="1.1" vector-effect="non-scaling-stroke" />
+              </svg>
+              <span class="diagonal-word top">Sandsynlighed</span>
+              <span class="diagonal-word bottom">Konsekvens</span>
+            </td>
+            <td class="corner-spacer" aria-hidden="true"></td>
+            <th class="consequence-heading" scope="col"><span>Mindre</span><span>arbejdsmiljø-</span><span>udfordring</span></th>
+            <th class="consequence-heading" scope="col"><span>Moderat</span><span>arbejdsmiljø-</span><span>udfordring</span></th>
+            <th class="consequence-heading" scope="col"><span>Alvorlig</span><span>arbejdsmiljø-</span><span>udfordring</span></th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <section class="assessment" id="assessment" aria-labelledby="assessment-title" hidden>
+      <h2 id="assessment-title">Valgt vurdering</h2>
+      <p class="assessment-copy" id="assessment-summary"></p>
+      <p class="assessment-action" id="assessment-action"></p>
+      <dl class="assessment-grid" id="assessment-details" hidden>
+        <div><dt>Score</dt><dd id="result-score"></dd></div>
+        <div><dt>Sandsynlighed</dt><dd id="result-likelihood"></dd></div>
+        <div><dt>Konsekvens</dt><dd id="result-consequence"></dd></div>
+      </dl>
+      <div class="assessment-actions">
+        <p class="key-hint">Tastatur: Tab til et felt, piletaster for at flytte, Enter eller mellemrum for at vælge.</p>
+        <button class="clear-button" id="clear-selection" type="button" disabled>Ryd valg</button>
+      </div>
+    </section>
+    <p class="sr-only" id="selection-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+    <p class="aaa-note">Tilgængelighed: Risikofarverne er gjort mørkere, så den hvide scoretekst opnår høj kontrast. Bevarelse af de oprindelige, lyse farver ville være i konflikt med AAA-kontrastkravet for tekst.</p>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const scoreButtons = Array.from(document.querySelectorAll(".score"));
+      const assessment = document.getElementById("assessment");
+      const summary = document.getElementById("assessment-summary");
+      const actionOutput = document.getElementById("assessment-action");
+      const announcement = document.getElementById("selection-announcement");
+      const details = document.getElementById("assessment-details");
+      const scoreOutput = document.getElementById("result-score");
+      const likelihoodOutput = document.getElementById("result-likelihood");
+      const consequenceOutput = document.getElementById("result-consequence");
+      const clearButton = document.getElementById("clear-selection");
+      const diagonalCell = document.querySelector(".diagonal-cell");
+      let selectedButton = null;
+
+      // Actions are supplied by the project specification; no score formula
+      // or additional risk classification is inferred here.
+      const actionByScore = Object.freeze({
+        2: "Behov for handling vurderes",
+        3: "Handling skal prioritere",
+        4: "Handling er påkrævet",
+        5: "Handling er akut, og skal ske hurtigst muligt",
+        6: "Handling er akut og skal ske straks"
+      });
+
+      // Match the labels' rotation to the diagonal's actual angle. The SVG line
+      // is stretched to the cell bounds; this keeps the words parallel when
+      // the matrix reflows or the user zooms the page.
+      function alignDiagonalLabels() {
+        const rect = diagonalCell.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const angle = -Math.atan(rect.height / rect.width) * 180 / Math.PI;
+        diagonalCell.style.setProperty("--diagonal-angle", `${angle}deg`);
+      }
+      alignDiagonalLabels();
+      if ("ResizeObserver" in window) {
+        new ResizeObserver(alignDiagonalLabels).observe(diagonalCell);
+      } else {
+        window.addEventListener("resize", alignDiagonalLabels, { passive: true });
+      }
+
+      /**
+       * Public integration contract:
+       * window.riskMatrixSelection is null or a plain object containing score,
+       * likelihood {label, level}, and consequence {label, point}.
+       * Each change also dispatches `riskmatrixchange` on window with
+       * event.detail.selection set to that same object (or null on reset).
+       */
+      function publishSelection(selection) {
+        window.riskMatrixSelection = selection;
+        window.dispatchEvent(new CustomEvent("riskmatrixchange", {
+          detail: { selection }
+        }));
+      }
+
+      function selectScore(button) {
+        // Clicking the active score toggles it off; activating another score
+        // replaces the old selection without moving keyboard focus.
+        if (button && selectedButton === button) button = null;
+        if (selectedButton) {
+          selectedButton.setAttribute("aria-pressed", "false");
+        }
+        selectedButton = button;
+
+        if (!button) {
+          scoreButtons.forEach(item => item.setAttribute("aria-pressed", "false"));
+          assessment.hidden = true;
+          details.hidden = true;
+          summary.textContent = "";
+          actionOutput.textContent = "";
+          assessment.removeAttribute("data-score");
+          clearButton.disabled = true;
+          announcement.textContent = "Valget er ryddet. Ingen score er valgt.";
+          publishSelection(null);
+          return;
+        }
+
+        button.setAttribute("aria-pressed", "true");
+        const selection = {
+          score: Number(button.dataset.score),
+          likelihood: {
+            label: button.dataset.likelihood,
+            level: Number(button.dataset.likelihoodLevel)
+          },
+          consequence: {
+            label: button.dataset.consequence,
+            point: Number(button.dataset.consequencePoint)
+          },
+          recommendedAction: actionByScore[Number(button.dataset.score)]
+        };
+
+        assessment.dataset.score = String(selection.score);
+        actionOutput.textContent = selection.recommendedAction;
+        scoreOutput.textContent = String(selection.score);
+        likelihoodOutput.textContent = `${selection.likelihood.label} (${selection.likelihood.level})`;
+        consequenceOutput.textContent = `${selection.consequence.label} (${selection.consequence.point})`;
+        summary.textContent = `Score ${selection.score} er valgt.`;
+        assessment.hidden = false;
+        details.hidden = false;
+        clearButton.disabled = false;
+        announcement.textContent = `Vurdering valgt: score ${selection.score}. Sandsynlighed: ${selection.likelihood.label}, niveau ${selection.likelihood.level}. Konsekvens: ${selection.consequence.label}, point ${selection.consequence.point}.`;
+        publishSelection(selection);
+      }
+
+      scoreButtons.forEach((button, index) => {
+        button.addEventListener("click", () => selectScore(button));
+        button.addEventListener("keydown", event => {
+          // Buttons already support Enter and Space natively. Arrow keys move focus
+          // in the 3×3 matrix without selecting until the user activates a cell.
+          const moves = {
+            ArrowLeft: index % 3 > 0 ? index - 1 : null,
+            ArrowRight: index % 3 < 2 ? index + 1 : null,
+            ArrowUp: index - 3 >= 0 ? index - 3 : null,
+            ArrowDown: index + 3 < scoreButtons.length ? index + 3 : null
+          };
+          if (!Object.prototype.hasOwnProperty.call(moves, event.key)) return;
+          event.preventDefault();
+          const nextIndex = moves[event.key];
+          if (nextIndex !== null) scoreButtons[nextIndex].focus();
+        });
+      });
+
+      clearButton.addEventListener("click", () => {
+        // The results panel hides after reset, so return focus to the score
+        // that was active before the panel disappeared.
+        const previousScore = selectedButton;
+        selectScore(null);
+        if (previousScore) previousScore.focus();
+      });
+      window.riskMatrixSelection = null;
+      window.getRiskMatrixSelection = () => window.riskMatrixSelection;
+    })();
+  </script>
+</body>
+</html>
