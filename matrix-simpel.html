@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Interaktiv risikomatrix</title>
+  <style>
+    /* All component styles are deliberately scoped to .risk-container so the
+       matrix can be embedded in an existing Bootstrap form without changing
+       the host page's buttons, tables, headings, or typography. */
+    .risk-container {
+      --rm-ink: #101828;
+      --rm-line: #172033;
+      --rm-muted: #344054;
+      --rm-focus: #0057B8;
+      --rm-surface: #ffffff;
+      --rm-selected: #111111;
+      --rm-radius: 0.35rem;
+      --rm-space: clamp(0.5rem, 2vw, 1rem);
+      --rm-axis-label-size: clamp(0.95rem, 3.2vw, 1.45rem);
+      width: 100%;
+      max-width: 750px;
+      margin-inline: auto;
+      padding: var(--rm-space);
+      box-sizing: border-box;
+      color: var(--rm-ink);
+      background: var(--rm-surface);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.45;
+    }
+
+    .risk-container *,
+    .risk-container *::before,
+    .risk-container *::after {
+      box-sizing: border-box;
+    }
+
+    .risk-container .matrix-heading {
+      margin: 0 0 0.5rem;
+      color: var(--rm-ink);
+      font-size: clamp(1.05rem, 3.5vw, 1.4rem);
+      font-weight: 750;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .risk-container .matrix-instructions {
+      margin: 0 auto clamp(0.65rem, 2vw, 1rem);
+      max-width: 42rem;
+      color: var(--rm-muted);
+      font-size: clamp(0.8rem, 2.4vw, 0.95rem);
+      text-align: center;
+    }
+
+    .risk-container .matrix-table-wrap {
+      width: 100%;
+      overflow: visible;
+    }
+
+    .risk-container .risk-table {
+      width: 100%;
+      table-layout: fixed;
+      /* Only the colored 3×3 grid has borders; axis labels and numbers remain open. */
+      border: 0;
+      border-collapse: collapse;
+      background: transparent;
+    }
+
+    .risk-container .risk-table col.axis-column { width: 10%; }
+    .risk-container .risk-table col.likelihood-column { width: 9%; }
+    .risk-container .risk-table col.consequence-column { width: 27%; }
+
+    .risk-container .risk-table th,
+    .risk-container .risk-table td {
+      padding: 0;
+      border: 0;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    /* Higher specificity than the table-wide border reset: only score cells
+       receive grid dividers; axis headings and numbers stay borderless. */
+    .risk-container .risk-table td.score-cell-container {
+      border: 4px solid var(--rm-line);
+      padding: 0;
+      background: #ffffff;
+    }
+
+    /* The likelihood title occupies the full height of the three matrix rows.
+       Vertical writing keeps it legible without stealing width from the cells. */
+    .risk-container .likelihood-axis {
+      color: var(--rm-ink);
+      background: var(--rm-surface);
+      font-size: var(--rm-axis-label-size);
+      font-weight: 750;
+      letter-spacing: 0.01em;
+    }
+
+    .risk-container .likelihood-axis span {
+      display: inline-block;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      white-space: nowrap;
+    }
+
+    .risk-container .likelihood-number {
+      color: var(--rm-ink);
+      background: var(--rm-surface);
+      font-size: clamp(0.95rem, 3.2vw, 1.55rem);
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .risk-cell {
+      /* The sum of the row likelihood and column consequence is shown
+         continuously in each colored button. */
+      position: relative;
+      display: grid;
+      width: 100%;
+      min-width: 0;
+      min-height: 52px;
+      aspect-ratio: 1 / 1;
+      place-items: center;
+      padding: 0.15rem;
+      border: 0;
+      border-radius: 0;
+      background: var(--cell-background, #ffffff);
+      color: #000000;
+      font: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .risk-container .risk-cell:hover {
+      box-shadow: inset 0 0 0 4px rgb(0 0 0 / 16%);
+    }
+
+    .risk-container .risk-cell:focus-visible {
+      z-index: 2;
+      outline: 4px solid var(--rm-focus);
+      outline-offset: -7px;
+    }
+
+    /* Selection is conveyed by an inset outline and a visible check marker,
+       not by a color change alone. */
+    .risk-container .risk-cell[aria-pressed="true"] {
+      box-shadow: inset 0 0 0 5px var(--rm-selected);
+    }
+
+    .risk-container .cell-score {
+      display: block;
+      color: #000000;
+      font-size: clamp(1.35rem, 5vw, 2.2rem);
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .selection-indicator {
+      position: absolute;
+      top: 0.2rem;
+      right: 0.2rem;
+      display: none;
+      width: 1.25rem;
+      height: 1.25rem;
+      place-items: center;
+      border: 1px solid #000000;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #000000;
+      font-size: 0.85rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .risk-container .risk-cell[aria-pressed="true"] .selection-indicator {
+      display: grid;
+    }
+
+    .risk-container .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    .risk-container .axis-spacer {
+      height: clamp(2.25rem, 7vw, 3.5rem);
+      background: var(--rm-surface);
+    }
+
+    .risk-container .consequence-number {
+      height: clamp(2.25rem, 7vw, 3.5rem);
+      color: var(--rm-ink);
+      background: var(--rm-surface);
+      font-size: clamp(0.95rem, 3.2vw, 1.55rem);
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .consequence-axis {
+      display: grid;
+      grid-template-columns: 10% 9% repeat(3, 27%);
+      width: 100%;
+      margin-top: 0.15rem;
+    }
+
+    .risk-container .consequence-axis span {
+      grid-column: 3 / 6;
+      padding: 0.2rem 0 0;
+      color: var(--rm-ink);
+      font-size: var(--rm-axis-label-size);
+      font-weight: 800;
+      line-height: 1.25;
+      text-align: center;
+    }
+
+    .risk-container .selection-result {
+      margin-top: 0.85rem;
+      padding: clamp(0.75rem, 2.5vw, 1rem);
+      border: 2px solid var(--rm-line);
+      border-left-width: 7px;
+      border-left-color: var(--result-color, var(--rm-line));
+      border-radius: var(--rm-radius);
+      background: #ffffff;
+      color: #000000;
+    }
+
+    /* The selected values, operators and score form one readable equation. */
+    .risk-container .result-equation {
+      display: grid;
+      /* Intrinsic tracks keep the equation compact instead of stretching the
+         two values to opposite edges of the result panel. */
+      grid-template-columns: max-content auto max-content auto max-content;
+      justify-content: center;
+      align-items: center;
+      column-gap: clamp(0.3rem, 1.2vw, 0.6rem);
+      width: 100%;
+      max-width: 100%;
+      margin-inline: auto;
+    }
+
+    .risk-container .result-value {
+      min-width: 0;
+      margin: 0;
+      text-align: center;
+    }
+
+    .risk-container .result-value dt {
+      margin: 0;
+      color: #303846;
+      font-size: clamp(0.68rem, 2.4vw, 0.88rem);
+      font-weight: 650;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-container .result-value dd {
+      margin: 0.15rem 0 0;
+      color: #000000;
+      font-size: clamp(1.2rem, 3.8vw, 1.5rem);
+      font-weight: 800;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .result-operator {
+      color: #000000;
+      font-size: clamp(1.15rem, 3.6vw, 1.45rem);
+      font-weight: 800;
+      line-height: 1;
+      text-align: center;
+    }
+
+    .risk-container .result-score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.5rem;
+      margin: 0;
+      padding: 0.35rem 0.6rem;
+      border: 2px solid #000000;
+      border-radius: 0.25rem;
+      background: var(--result-color, #ffffff);
+      color: #000000;
+      font-size: clamp(0.95rem, 2.9vw, 1.1rem);
+      font-weight: 800;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .result-score-value {
+      margin-left: 0.3em;
+    }
+
+    .risk-container .result-controls {
+      display: flex;
+      justify-content: center;
+      margin-top: 0.8rem;
+    }
+
+    .risk-container .clear-selection {
+      min-height: 44px;
+      padding: 0.55rem 1rem;
+      border: 2px solid var(--rm-line);
+      border-radius: var(--rm-radius);
+      background: #ffffff;
+      color: #000000;
+      font: inherit;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .risk-container .clear-selection:hover {
+      background: #eef2f6;
+    }
+
+    .risk-container .clear-selection:focus-visible {
+      outline: 4px solid var(--rm-focus);
+      outline-offset: 3px;
+    }
+
+    .risk-container .result-action {
+      margin: 0.65rem auto 0.7rem;
+      color: #000000;
+      font-size: clamp(1rem, 3vw, 1.12rem);
+      font-weight: 750;
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .risk-container .selection-result[hidden] {
+      display: none;
+    }
+
+
+    @media (max-width: 360px) {
+      .risk-container {
+        --rm-space: 0.35rem;
+      }
+
+      .risk-container .risk-table col.axis-column { width: 11%; }
+      .risk-container .risk-table col.likelihood-column { width: 8%; }
+      .risk-container .risk-table col.consequence-column { width: 27%; }
+
+      .risk-container .consequence-axis {
+        grid-template-columns: 11% 8% repeat(3, 27%);
+      }
+
+      .risk-container .likelihood-number,
+      .risk-container .consequence-number {
+        font-size: 0.92rem;
+      }
+
+      /* Keep the compact equation centered at small embedding widths. */
+      .risk-container .selection-result {
+        padding: 0.5rem;
+      }
+
+      .risk-container .result-equation {
+        /* Slightly tighter type and spacing prevent the compact equation from
+           overflowing in very narrow (250px) Bootstrap columns. */
+        gap: 0.15rem;
+        grid-template-columns: max-content auto max-content auto max-content;
+        width: max-content;
+        max-width: 100%;
+      }
+
+      .risk-container .result-value dt {
+        font-size: 0.62rem;
+      }
+
+      .risk-container .result-value dd {
+        font-size: 1rem;
+      }
+
+      .risk-container .result-operator {
+        font-size: 0.95rem;
+      }
+
+      .risk-container .result-score {
+        min-height: 2.1rem;
+        padding-inline: 0.3rem;
+        font-size: 0.74rem;
+      }
+
+      .risk-container .result-action {
+        font-size: 0.9rem;
+        text-align: center;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .risk-container *,
+      .risk-container *::before,
+      .risk-container *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Bootstrap-ready component root: keep this wrapper when embedding. -->
+  <div class="risk-container" id="risk-matrix" role="region" aria-labelledby="risk-matrix-title">
+    <h2 class="matrix-heading" id="risk-matrix-title">Risikovurderingsmatrix</h2>
+    <p class="matrix-instructions" id="risk-matrix-instructions">
+      Vælg ét felt med mus, berøring eller tastatur. Brug piletasterne til at flytte mellem felterne, og tryk Enter eller mellemrum for at vælge.
+    </p>
+
+    <div class="matrix-table-wrap">
+      <table class="risk-table" aria-describedby="risk-matrix-instructions">
+        <caption class="visually-hidden">Matrix med sandsynlighed på rækkerne fra 3 øverst til 1 nederst og konsekvens på kolonnerne fra 1 til 3.</caption>
+        <colgroup>
+          <col class="axis-column">
+          <col class="likelihood-column">
+          <col class="consequence-column">
+          <col class="consequence-column">
+          <col class="consequence-column">
+        </colgroup>
+        <tbody>
+          <tr>
+            <th class="likelihood-axis" id="likelihood-axis" scope="rowgroup" rowspan="3"><span>Sandsynlighed</span></th>
+            <th class="likelihood-number" id="likelihood-3" scope="row">3</th>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-3 consequence-1"><button class="risk-cell" type="button" data-likelihood="3" data-consequence="1" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 3, Konsekvens 1</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-3 consequence-2"><button class="risk-cell" type="button" data-likelihood="3" data-consequence="2" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 3, Konsekvens 2</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-3 consequence-3"><button class="risk-cell" type="button" data-likelihood="3" data-consequence="3" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 3, Konsekvens 3</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+          </tr>
+          <tr>
+            <th class="likelihood-number" id="likelihood-2" scope="row">2</th>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-2 consequence-1"><button class="risk-cell" type="button" data-likelihood="2" data-consequence="1" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 2, Konsekvens 1</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-2 consequence-2"><button class="risk-cell" type="button" data-likelihood="2" data-consequence="2" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 2, Konsekvens 2</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-2 consequence-3"><button class="risk-cell" type="button" data-likelihood="2" data-consequence="3" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 2, Konsekvens 3</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+          </tr>
+          <tr>
+            <th class="likelihood-number" id="likelihood-1" scope="row">1</th>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-1 consequence-1"><button class="risk-cell" type="button" data-likelihood="1" data-consequence="1" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 1, Konsekvens 1</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-1 consequence-2"><button class="risk-cell" type="button" data-likelihood="1" data-consequence="2" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 1, Konsekvens 2</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+            <td class="score-cell-container" headers="likelihood-axis likelihood-1 consequence-3"><button class="risk-cell" type="button" data-likelihood="1" data-consequence="3" aria-pressed="false"><span class="visually-hidden">Vælg felt: Sandsynlighed 1, Konsekvens 3</span><span class="cell-score" aria-hidden="true"></span><span class="selection-indicator" aria-hidden="true">✓</span></button></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="axis-spacer" colspan="2" aria-hidden="true"></td>
+            <th class="consequence-number" id="consequence-1" scope="col" aria-label="Konsekvens 1">1</th>
+            <th class="consequence-number" id="consequence-2" scope="col" aria-label="Konsekvens 2">2</th>
+            <th class="consequence-number" id="consequence-3" scope="col" aria-label="Konsekvens 3">3</th>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="consequence-axis" aria-label="Konsekvens">
+        <span>Konsekvens</span>
+      </div>
+    </div>
+
+    <section class="selection-result" aria-label="Valgt risikovurdering" hidden>
+      <div class="result-equation" role="group" aria-label="Beregning af score">
+        <dl class="result-value">
+          <dt>Sandsynlighed</dt>
+          <dd class="result-likelihood"></dd>
+        </dl>
+        <span class="result-operator" aria-hidden="true">+</span>
+        <dl class="result-value">
+          <dt>Konsekvens</dt>
+          <dd class="result-consequence"></dd>
+        </dl>
+        <span class="result-operator" aria-hidden="true">=</span>
+        <p class="result-score">Score <span class="result-score-value"></span></p>
+      </div>
+      <p class="result-action"></p>
+      <div class="result-controls">
+        <button class="clear-selection" type="button">Ryd valg</button>
+      </div>
+    </section>
+    <p class="visually-hidden" id="risk-matrix-live" aria-live="polite" aria-atomic="true"></p>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const root = document.getElementById('risk-matrix');
+      if (!root) return;
+
+      // Keep assessment data independent of the DOM and presentation. The
+      // nine colors retain the source image's green-to-red positions; scores
+      // are derived only by adding likelihood and consequence.
+      const matrixData = {
+        likelihoodLevels: [3, 2, 1],
+        consequencePoints: [1, 2, 3],
+        cells: [
+          { likelihood: 3, consequence: 1, color: '#F0D4A1' },
+          { likelihood: 3, consequence: 2, color: '#F1B96E' },
+          { likelihood: 3, consequence: 3, color: '#E8A5A1' },
+          { likelihood: 2, consequence: 1, color: '#B9D5BD' },
+          { likelihood: 2, consequence: 2, color: '#EED19B' },
+          { likelihood: 2, consequence: 3, color: '#F2B96D' },
+          { likelihood: 1, consequence: 1, color: '#AAC9A5' },
+          { likelihood: 1, consequence: 2, color: '#B7D2AE' },
+          { likelihood: 1, consequence: 3, color: '#EDC28D' }
+        ]
+      };
+
+      const actionDescriptions = Object.freeze({
+        2: 'Behov for handling vurderes',
+        3: 'Handling skal prioriteres',
+        4: 'Handling er påkrævet',
+        5: 'Handling er akut, og skal ske hurtigst muligt',
+        6: 'Handling er akut og skal ske straks'
+      });
+
+      const selectors = Object.freeze({
+        table: '.risk-table',
+        cell: '.risk-cell',
+        score: '.cell-score',
+        accessibleName: '.visually-hidden',
+        result: '.selection-result',
+        likelihood: '.result-likelihood',
+        consequence: '.result-consequence',
+        scoreValue: '.result-score-value',
+        action: '.result-action',
+        clear: '.clear-selection',
+        live: '#risk-matrix-live'
+      });
+
+      const table = root.querySelector(selectors.table);
+      const buttons = Array.from(root.querySelectorAll(selectors.cell));
+      const resultPanel = root.querySelector(selectors.result);
+      const resultLikelihood = root.querySelector(selectors.likelihood);
+      const resultConsequence = root.querySelector(selectors.consequence);
+      const resultScore = root.querySelector(selectors.scoreValue);
+      const resultAction = root.querySelector(selectors.action);
+      const clearButton = root.querySelector(selectors.clear);
+      const liveRegion = root.querySelector(selectors.live);
+
+      const cellKey = (likelihood, consequence) => `${likelihood}:${consequence}`;
+      const cellsByKey = new Map(
+        matrixData.cells.map((cell) => [cellKey(cell.likelihood, cell.consequence), cell])
+      );
+      const buttonsByKey = new Map(
+        buttons.map((button) => [
+          cellKey(Number(button.dataset.likelihood), Number(button.dataset.consequence)),
+          button
+        ])
+      );
+
+      // Fail visibly in the console if markup and the scoring model drift apart.
+      const expectedCellKeys = new Set(
+        matrixData.likelihoodLevels.flatMap((likelihood) =>
+          matrixData.consequencePoints.map((consequence) => cellKey(likelihood, consequence))
+        )
+      );
+      const hasUniqueCells = cellsByKey.size === 9 &&
+        matrixData.cells.length === 9 &&
+        matrixData.cells.every((cell) => expectedCellKeys.has(cellKey(cell.likelihood, cell.consequence)));
+      const markupMatchesData = buttonsByKey.size === buttons.length &&
+        buttons.length === 9 &&
+        matrixData.cells.every((cell) => buttonsByKey.has(cellKey(cell.likelihood, cell.consequence)));
+      const hasActionForEveryScore = matrixData.cells.every((cell) =>
+        Object.hasOwn(actionDescriptions, cell.likelihood + cell.consequence)
+      );
+
+      if (!table || !resultPanel || !clearButton || !liveRegion ||
+          !hasUniqueCells || !markupMatchesData || !hasActionForEveryScore) {
+        console.error('[RiskMatrix] Matrix markup or data configuration is inconsistent.');
+        return;
+      }
+
+      let selection = null;
+
+      function getSelectionSnapshot() {
+        return selection ? { ...selection } : null;
+      }
+
+      function emitChange() {
+        // Dispatch a snapshot so external listeners cannot mutate component state.
+        root.dispatchEvent(new CustomEvent('riskmatrix:change', {
+          bubbles: true,
+          detail: { selection: getSelectionSnapshot() }
+        }));
+      }
+
+      function renderCells() {
+        for (const cell of matrixData.cells) {
+          const button = buttonsByKey.get(cellKey(cell.likelihood, cell.consequence));
+          const score = cell.likelihood + cell.consequence;
+
+          button.style.setProperty('--cell-background', cell.color);
+          button.querySelector(selectors.score).textContent = String(score);
+          button.querySelector(selectors.accessibleName).textContent =
+            `Vælg score ${score}: Sandsynlighed ${cell.likelihood}, Konsekvens ${cell.consequence}`;
+        }
+      }
+
+      function renderSelection() {
+        for (const button of buttons) {
+          const key = cellKey(Number(button.dataset.likelihood), Number(button.dataset.consequence));
+          button.setAttribute('aria-pressed', String(Boolean(selection) && key === selection.cellId));
+        }
+
+        if (!selection) {
+          resultPanel.hidden = true;
+          resultLikelihood.textContent = '';
+          resultConsequence.textContent = '';
+          resultScore.textContent = '';
+          resultAction.textContent = '';
+          resultPanel.style.removeProperty('--result-color');
+          return;
+        }
+
+        resultLikelihood.textContent = String(selection.likelihood);
+        resultConsequence.textContent = String(selection.consequence);
+        resultScore.textContent = String(selection.score);
+        resultAction.textContent = selection.action;
+        resultPanel.style.setProperty('--result-color', selection.color);
+        resultPanel.hidden = false;
+      }
+
+      function clearSelection() {
+        selection = null;
+        renderSelection();
+        liveRegion.textContent = 'Valget er ryddet.';
+        emitChange();
+      }
+
+      function selectCell(likelihood, consequence) {
+        const normalizedLikelihood = Number(likelihood);
+        const normalizedConsequence = Number(consequence);
+        const cell = cellsByKey.get(cellKey(normalizedLikelihood, normalizedConsequence));
+
+        if (!cell) return false;
+
+        // Activating the selected cell a second time clears the assessment.
+        if (selection && selection.cellId === cellKey(cell.likelihood, cell.consequence)) {
+          clearSelection();
+          return true;
+        }
+
+        const score = cell.likelihood + cell.consequence;
+        selection = {
+          likelihood: cell.likelihood,
+          likelihoodLabel: 'Sandsynlighed',
+          consequence: cell.consequence,
+          consequenceLabel: 'Konsekvens',
+          score,
+          calculation: `${cell.likelihood} + ${cell.consequence} = ${score}`,
+          action: actionDescriptions[score],
+          cellId: cellKey(cell.likelihood, cell.consequence),
+          color: cell.color
+        };
+
+        renderSelection();
+        liveRegion.textContent =
+          `Score ${score} valgt. Sandsynlighed ${cell.likelihood} plus ` +
+          `Konsekvens ${cell.consequence}. ${selection.action}.`;
+        emitChange();
+        return true;
+      }
+
+      function handleCellClick(event) {
+        const button = event.target.closest(selectors.cell);
+        if (!button || !table.contains(button)) return;
+
+        selectCell(button.dataset.likelihood, button.dataset.consequence);
+      }
+
+      function handleCellKeydown(event) {
+        const button = event.target.closest(selectors.cell);
+        if (!button || !table.contains(button)) return;
+
+        const likelihood = Number(button.dataset.likelihood);
+        const consequence = Number(button.dataset.consequence);
+        let nextLikelihood = likelihood;
+        let nextConsequence = consequence;
+
+        switch (event.key) {
+          case 'ArrowLeft': nextConsequence -= 1; break;
+          case 'ArrowRight': nextConsequence += 1; break;
+          case 'ArrowUp': nextLikelihood += 1; break;
+          case 'ArrowDown': nextLikelihood -= 1; break;
+          case 'Home': nextConsequence = 1; break;
+          case 'End': nextConsequence = 3; break;
+          default: return; // Native Enter and Space continue to activate the button.
+        }
+
+        // Prevent arrow keys from scrolling the page, including at grid edges.
+        event.preventDefault();
+        buttonsByKey.get(cellKey(nextLikelihood, nextConsequence))?.focus();
+      }
+
+      // Event delegation keeps interaction wiring independent of cell count.
+      table.addEventListener('click', handleCellClick);
+      table.addEventListener('keydown', handleCellKeydown);
+
+      clearButton.addEventListener('click', () => {
+        const previouslySelected = selection &&
+          buttonsByKey.get(selection.cellId);
+        clearSelection();
+        previouslySelected?.focus();
+      });
+
+      renderCells();
+
+      // Public integration API. Scores are the sum of likelihood and consequence.
+      // Listen for `riskmatrix:change` on the root to receive selection snapshots.
+      // Example: document.querySelector('.risk-container').addEventListener(
+      //   'riskmatrix:change', event => console.log(event.detail.selection));
+      // API: window.RiskMatrix.getSelection(), .selectCell(3, 2), .clearSelection().
+      window.RiskMatrix = Object.freeze({
+        getSelection: getSelectionSnapshot,
+        selectCell,
+        clearSelection,
+        getMatrixData: () => ({
+          likelihoodLevels: [...matrixData.likelihoodLevels],
+          consequencePoints: [...matrixData.consequencePoints],
+          cells: matrixData.cells.map((cell) => ({ ...cell }))
+        })
+      });
+
+      // Initial state is intentionally empty: no cell or result is selected.
+    })();
+  </script>
+</body>
+</html>
