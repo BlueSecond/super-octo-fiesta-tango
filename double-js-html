@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Interaktiv risikomatrix</title>
+  <style>
+    /* All presentation is scoped to .risk-container so the component can sit
+       inside an existing Bootstrap form without changing the host page. */
+    .risk-container {
+      --risk-ink: #101321;
+      --risk-text: #171b29;
+      --risk-muted: #5b6271;
+      --risk-line: #d8dce5;
+      --risk-surface: #ffffff;
+      --risk-focus: #101321;
+      --risk-green-1: #298139;
+      --risk-green-2: #43a66a;
+      --risk-green-3: #68ab76;
+      --risk-yellow-1: #e0a43c;
+      --risk-yellow-2: #dd9e41;
+      --risk-yellow-3: #e6ae4f;
+      --risk-orange-1: #de8625;
+      --risk-orange-2: #db841a;
+      --risk-red: #ae4e45;
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto 24px;
+      padding: 16px;
+      color: var(--risk-text);
+      background: var(--risk-surface);
+      border: 1px solid #e2e5ec;
+      border-radius: 12px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    .risk-container *,
+    .risk-container *::before,
+    .risk-container *::after {
+      box-sizing: border-box;
+    }
+
+    .risk-container .risk-title {
+      margin: 0 0 4px;
+      color: var(--risk-ink);
+      font-size: clamp(1.15rem, 2.5vw, 1.45rem);
+      font-weight: 750;
+      line-height: 1.25;
+    }
+
+    .risk-container .risk-intro {
+      margin: 0 0 14px;
+      color: var(--risk-muted);
+      font-size: 0.92rem;
+    }
+
+    .risk-container .matrix-viewport {
+      width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      border-radius: 3px;
+    }
+
+    /* A square 4 x 4 grid guarantees equal square cells at every width. */
+    .risk-container .matrix-grid {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 680px;
+      min-width: 0;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+      padding: 1px;
+      gap: 1px;
+      overflow: hidden;
+      background: var(--risk-line);
+      border: 1px solid var(--risk-ink);
+      border-radius: 3px;
+    }
+
+    .risk-container .matrix-row {
+      display: grid;
+      flex: 1 1 25%;
+      min-height: 0;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+    }
+
+    .risk-container .matrix-cell {
+      position: relative;
+      display: grid;
+      min-width: 0;
+      min-height: 0;
+      place-items: stretch;
+      overflow: hidden;
+      background: var(--risk-surface);
+    }
+
+    .risk-container .axis-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      color: #f7f8fb;
+      background: var(--risk-ink);
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .risk-container .axis-cell .axis-number {
+      display: block;
+      margin-bottom: 3px;
+      font-size: clamp(0.78rem, 1.5vw, 0.95rem);
+      font-weight: 650;
+    }
+
+    .risk-container .axis-cell .axis-label {
+      display: block;
+      max-width: 100%;
+      font-size: clamp(0.64rem, 1.25vw, 0.82rem);
+      font-weight: 620;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-container .diagonal-cell {
+      position: relative;
+      padding: 0;
+      background: var(--risk-ink);
+    }
+
+    .risk-container .diagonal-cell svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .risk-container .diagonal-cell line {
+      stroke: #e5e8f0;
+      stroke-width: 1.35;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .risk-container .diagonal-cell text {
+      fill: #f7f8fb;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: 0;
+      text-anchor: middle;
+      dominant-baseline: middle;
+    }
+
+    .risk-container .score-cell {
+      appearance: none;
+      display: grid;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      color: #080a0e;
+      background: var(--cell-color);
+      font: inherit;
+      font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+      font-weight: 800;
+      line-height: 1;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .risk-container .score-cell:hover {
+      filter: brightness(0.96);
+    }
+
+    .risk-container .score-cell:focus-visible {
+      z-index: 2;
+      outline: 3px solid var(--risk-focus);
+      outline-offset: -5px;
+      box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.74);
+    }
+
+    .risk-container .score-cell.is-selected,
+    .risk-container .readonly-score.is-selected {
+      z-index: 1;
+      outline: 3px solid var(--risk-ink);
+      outline-offset: -5px;
+      box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.72);
+    }
+
+    .risk-container .score-cell.is-selected::after,
+    .risk-container .readonly-score.is-selected::after {
+      content: "✓";
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      display: grid;
+      width: clamp(18px, 2.2vw, 23px);
+      height: clamp(18px, 2.2vw, 23px);
+      place-items: center;
+      border: 1px solid var(--risk-ink);
+      border-radius: 50%;
+      color: var(--risk-ink);
+      background: #fff;
+      font-size: 0.78rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .risk-container .readonly-score {
+      position: relative;
+      display: grid;
+      width: 100%;
+      height: 100%;
+      place-items: center;
+      color: #080a0e;
+      background: var(--cell-color);
+      font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .risk-container .assessment-panel {
+      margin-top: 14px;
+      padding: 16px 18px;
+      border: 1px solid #cbd1dd;
+      border-left: 5px solid var(--assessment-color, var(--risk-ink));
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .risk-container .assessment-panel[hidden] {
+      display: none;
+    }
+
+    .risk-container .assessment-topline {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px 16px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+
+    .risk-container .assessment-heading {
+      margin: 0;
+      color: var(--risk-ink);
+      font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .risk-container .score-badge {
+      display: inline-flex;
+      min-height: 38px;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 12px;
+      border: 2px solid var(--risk-ink);
+      border-radius: 6px;
+      color: #080a0e;
+      background: var(--assessment-color);
+      font-size: 1rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    /* A clear, explicit calculation: likelihood × consequence = risk score. */
+    .risk-container .assessment-equation {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: clamp(5px, 1.5vw, 12px);
+      max-width: 560px;
+      margin: 2px auto 12px;
+      color: var(--risk-ink);
+      text-align: center;
+    }
+
+    .risk-container .equation-term {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 7px 4px;
+      border: 1px solid #d9dee8;
+      border-radius: 6px;
+      background: #f8f9fb;
+    }
+
+    .risk-container .equation-label {
+      display: block;
+      max-width: 100%;
+      font-size: clamp(0.64rem, 1.5vw, 0.82rem);
+      font-weight: 700;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-container .equation-value {
+      display: block;
+      font-size: clamp(1.15rem, 2.8vw, 1.5rem);
+      font-weight: 850;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-container .equation-result {
+      border: 2px solid var(--assessment-color, var(--risk-ink));
+      background: var(--assessment-color, #f8f9fb);
+    }
+
+    .risk-container .equation-operator {
+      color: var(--risk-ink);
+      font-size: clamp(1.05rem, 2.5vw, 1.35rem);
+      font-weight: 850;
+      line-height: 1;
+    }
+
+    .risk-container .assessment-description {
+      max-width: 62ch;
+      margin: 0 auto;
+      color: #343a47;
+      font-size: 0.98rem;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    .risk-container .assessment-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 14px;
+    }
+
+    .risk-container .clear-selection {
+      appearance: none;
+      min-width: 104px;
+      min-height: 44px;
+      padding: 8px 15px;
+      border: 2px solid #293044;
+      border-radius: 7px;
+      color: var(--risk-ink);
+      background: #fff;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .risk-container .clear-selection:hover {
+      background: #f1f3f7;
+    }
+
+    .risk-container .clear-selection:focus-visible {
+      outline: 3px solid #315cbb;
+      outline-offset: 3px;
+    }
+
+    .risk-container.risk-readonly-container {
+      margin-top: 28px;
+      border-style: dashed;
+      border-color: #bdc4d1;
+      background: #fbfcfe;
+    }
+
+    .risk-container.risk-readonly-container .risk-intro {
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 480px) {
+      .risk-container {
+        padding: 10px;
+        border-radius: 9px;
+      }
+
+      .risk-container .axis-cell {
+        padding: 2px;
+      }
+
+      .risk-container .axis-cell .axis-number {
+        margin-bottom: 2px;
+        font-size: 0.76rem;
+      }
+
+      .risk-container .axis-cell .axis-label {
+        font-size: 0.62rem;
+      }
+
+      .risk-container .assessment-panel {
+        padding: 13px 12px;
+      }
+
+      .risk-container .diagonal-cell text {
+        font-size: 12px;
+      }
+    }
+
+    /* At widths below 370px the matrix keeps a readable minimum size and
+       the viewport provides horizontal scrolling rather than squeezing text. */
+    @media (max-width: 369px) {
+      .risk-container .matrix-grid {
+        min-width: 360px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .risk-container *,
+      .risk-container *::before,
+      .risk-container *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Place these two independent roots wherever the component is needed. -->
+  <div class="risk-container risk-interactive-container" id="risk-matrix">
+    <h1 class="risk-title">Risikomatrix</h1>
+    <p class="risk-intro">Vælg ét felt i matrixen for at se risikovurderingen.</p>
+    <div class="matrix-viewport">
+      <div class="matrix-grid" id="risk-matrix-grid" role="table"
+           aria-label="Risikomatrix med sandsynlighed og konsekvens" aria-rowcount="4" aria-colcount="4"></div>
+    </div>
+    <section class="assessment-panel" id="risk-assessment" aria-live="polite" aria-atomic="true" hidden></section>
+  </div>
+
+  <div class="risk-container risk-readonly-container" id="risk-matrix-receipt">
+    <h2 class="risk-title">Skrivebeskyttet kopi</h2>
+    <p class="risk-intro">Denne kopi følger automatisk valget i den interaktive matrix.</p>
+    <div class="matrix-viewport">
+      <div class="matrix-grid" id="risk-matrix-readonly-grid" role="table"
+           aria-label="Skrivebeskyttet kopi af risikomatrixen" aria-rowcount="4" aria-colcount="4"></div>
+    </div>
+    <section class="assessment-panel" id="risk-readonly-assessment" aria-live="polite" aria-atomic="true" hidden></section>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      // Matrix values and cell colors are deliberately stored per position:
+      // repeated scores (2, 3 and 6) occur in different risk-color cells.
+      const likelihoodRows = [
+        { level: 3, label: "Høj", scores: [3, 6, 9], colors: ["#dd9e41", "#de8625", "#ae4e45"] },
+        { level: 2, label: "Moderat", scores: [2, 4, 6], colors: ["#43a66a", "#e6ae4f", "#db841a"] },
+        { level: 1, label: "Lav", scores: [1, 2, 3], colors: ["#298139", "#68ab76", "#e0a43c"] }
+      ];
+
+      const consequenceColumns = [
+        { value: 1, label: "Mindre" },
+        { value: 2, label: "Moderat" },
+        { value: 3, label: "Alvorlig" }
+      ];
+
+      // Replace these placeholder descriptions with approved workplace text.
+      const scoreContent = {
+        1: { heading: "Risikoscore 1", description: "Beskrivelsen for risikoscore 1 kan tilpasses her." },
+        2: { heading: "Risikoscore 2", description: "Beskrivelsen for risikoscore 2 kan tilpasses her." },
+        3: { heading: "Risikoscore 3", description: "Beskrivelsen for risikoscore 3 kan tilpasses her." },
+        4: { heading: "Risikoscore 4", description: "Beskrivelsen for risikoscore 4 kan tilpasses her." },
+        6: { heading: "Risikoscore 6", description: "Beskrivelsen for risikoscore 6 kan tilpasses her." },
+        9: { heading: "Risikoscore 9", description: "Beskrivelsen for risikoscore 9 kan tilpasses her." }
+      };
+
+      const interactiveRoot = document.getElementById("risk-matrix");
+      const interactiveGrid = document.getElementById("risk-matrix-grid");
+      const readonlyGrid = document.getElementById("risk-matrix-readonly-grid");
+      const interactiveAssessment = document.getElementById("risk-assessment");
+      const readonlyAssessment = document.getElementById("risk-readonly-assessment");
+
+      let selectedButton = null;
+      let currentSelection = null;
+
+      function makeElement(tagName, className, text) {
+        const element = document.createElement(tagName);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
+      }
+
+      function makeAxisCell(number, label, role) {
+        const cell = makeElement("div", "matrix-cell axis-cell");
+        cell.setAttribute("role", role);
+        cell.append(
+          makeElement("span", "axis-number", String(number)),
+          makeElement("span", "axis-label", label)
+        );
+        cell.setAttribute("aria-label", `${number} ${label}`);
+        return cell;
+      }
+
+      function makeDiagonalCell() {
+        const cell = makeElement("div", "matrix-cell diagonal-cell");
+        cell.setAttribute("role", "columnheader");
+        cell.setAttribute("aria-label", "Sandsynlighed og Konsekvens");
+        // The line is drawn corner-to-corner in a square viewBox. It therefore
+        // continues to meet the exact cell corners at every responsive size.
+        cell.innerHTML = `
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+            <line x1="0" y1="100" x2="100" y2="0"></line>
+            <text x="32" y="32" textLength="72" lengthAdjust="spacingAndGlyphs" transform="rotate(-45 32 32)">Sandsynlighed</text>
+            <text x="68" y="68" textLength="60" lengthAdjust="spacingAndGlyphs" transform="rotate(-45 68 68)">Konsekvens</text>
+          </svg>`;
+        return cell;
+      }
+
+      function makeMatrix(grid, interactive) {
+        const firstRow = makeElement("div", "matrix-row");
+        firstRow.setAttribute("role", "row");
+        firstRow.append(makeAxisCell(3, "Høj", "rowheader"));
+
+        consequenceColumns.forEach((column) => {
+          const rowCell = makeElement("div", "matrix-cell");
+          rowCell.setAttribute("role", "cell");
+          const score = likelihoodRows[0].scores[column.value - 1];
+          const color = likelihoodRows[0].colors[column.value - 1];
+
+          if (interactive) {
+            const scoreButton = makeElement("button", "score-cell", String(score));
+            scoreButton.type = "button";
+            scoreButton.style.setProperty("--cell-color", color);
+            scoreButton.dataset.likelihoodLevel = String(likelihoodRows[0].level);
+            scoreButton.dataset.likelihoodLabel = likelihoodRows[0].label;
+            scoreButton.dataset.consequenceValue = String(column.value);
+            scoreButton.dataset.consequenceLabel = column.label;
+            scoreButton.dataset.score = String(score);
+            scoreButton.setAttribute("aria-label", `Risikoscore ${score}. Sandsynlighed ${likelihoodRows[0].level}, ${likelihoodRows[0].label}. Konsekvens ${column.value}, ${column.label}.`);
+            scoreButton.setAttribute("aria-pressed", "false");
+            scoreButton.tabIndex = column.value === 1 ? 0 : -1;
+            rowCell.append(scoreButton);
+          } else {
+            const scoreText = makeElement("div", "readonly-score", String(score));
+            scoreText.style.setProperty("--cell-color", color);
+            scoreText.setAttribute("aria-label", `Risikoscore ${score}`);
+            rowCell.append(scoreText);
+          }
+          firstRow.append(rowCell);
+        });
+        grid.append(firstRow);
+
+        likelihoodRows.slice(1).forEach((likelihood) => {
+          const row = makeElement("div", "matrix-row");
+          row.setAttribute("role", "row");
+          row.append(makeAxisCell(likelihood.level, likelihood.label, "rowheader"));
+
+          consequenceColumns.forEach((column, index) => {
+            const cell = makeElement("div", "matrix-cell");
+            cell.setAttribute("role", "cell");
+            const score = likelihood.scores[index];
+            const color = likelihood.colors[index];
+
+            if (interactive) {
+              const button = makeElement("button", "score-cell", String(score));
+              button.type = "button";
+              button.style.setProperty("--cell-color", color);
+              button.dataset.likelihoodLevel = String(likelihood.level);
+              button.dataset.likelihoodLabel = likelihood.label;
+              button.dataset.consequenceValue = String(column.value);
+              button.dataset.consequenceLabel = column.label;
+              button.dataset.score = String(score);
+              button.setAttribute("aria-label", `Risikoscore ${score}. Sandsynlighed ${likelihood.level}, ${likelihood.label}. Konsekvens ${column.value}, ${column.label}.`);
+              button.setAttribute("aria-pressed", "false");
+              button.tabIndex = -1;
+              cell.append(button);
+            } else {
+              const scoreText = makeElement("div", "readonly-score", String(score));
+              scoreText.style.setProperty("--cell-color", color);
+              scoreText.setAttribute("aria-label", `Risikoscore ${score}`);
+              cell.append(scoreText);
+            }
+            row.append(cell);
+          });
+          grid.append(row);
+        });
+
+        const footerRow = makeElement("div", "matrix-row");
+        footerRow.setAttribute("role", "row");
+        footerRow.append(makeDiagonalCell());
+        consequenceColumns.forEach((column) => {
+          footerRow.append(makeAxisCell(column.value, column.label, "columnheader"));
+        });
+        grid.append(footerRow);
+      }
+
+      // Create the full display-only copy once. It receives state updates but
+      // never contains buttons, links, or other interactive controls.
+      makeMatrix(interactiveGrid, true);
+      makeMatrix(readonlyGrid, false);
+
+      const scoreButtons = Array.from(interactiveGrid.querySelectorAll(".score-cell"));
+
+      function readButton(button) {
+        if (!button) return null;
+        return {
+          score: Number(button.dataset.score),
+          likelihoodLevel: Number(button.dataset.likelihoodLevel),
+          likelihoodLabel: button.dataset.likelihoodLabel,
+          consequenceValue: Number(button.dataset.consequenceValue),
+          consequenceLabel: button.dataset.consequenceLabel,
+          color: button.style.getPropertyValue("--cell-color").trim()
+        };
+      }
+
+      function copySelection(selection) {
+        return selection ? { ...selection } : null;
+      }
+
+      function renderAssessment(panel, selection, includeClearButton) {
+        panel.replaceChildren();
+        if (!selection) {
+          panel.hidden = true;
+          panel.style.removeProperty("--assessment-color");
+          return;
+        }
+
+        const content = scoreContent[selection.score];
+        panel.style.setProperty("--assessment-color", selection.color);
+        panel.hidden = false;
+
+        const topLine = makeElement("div", "assessment-topline");
+        topLine.append(
+          makeElement("h2", "assessment-heading", content.heading),
+          makeElement("span", "score-badge", `Score ${selection.score}`)
+        );
+
+        // Show the assessment calculation in the same order as the risk model:
+        // Sandsynlighed × Konsekvens = Risikoscore.
+        const equation = makeElement("div", "assessment-equation");
+        equation.setAttribute("role", "group");
+        equation.setAttribute(
+          "aria-label",
+          `Beregning: Sandsynlighed ${selection.likelihoodLevel}, ${selection.likelihoodLabel}, gange Konsekvens ${selection.consequenceValue}, ${selection.consequenceLabel}, er lig med Risikoscore ${selection.score}.`
+        );
+
+        function equationTerm(label, value, isResult = false) {
+          const term = makeElement("div", `equation-term${isResult ? " equation-result" : ""}`);
+          term.append(
+            makeElement("span", "equation-label", label),
+            makeElement("strong", "equation-value", String(value))
+          );
+          return term;
+        }
+
+        const multiply = makeElement("span", "equation-operator", "×");
+        multiply.setAttribute("aria-hidden", "true");
+        const equals = makeElement("span", "equation-operator", "=");
+        equals.setAttribute("aria-hidden", "true");
+        equation.append(
+          equationTerm("Sandsynlighed", selection.likelihoodLevel),
+          multiply,
+          equationTerm("Konsekvens", selection.consequenceValue),
+          equals,
+          equationTerm("Risikoscore", selection.score, true)
+        );
+
+        const description = makeElement("p", "assessment-description", content.description);
+        panel.append(topLine, equation, description);
+
+        if (includeClearButton) {
+          const actions = makeElement("div", "assessment-actions");
+          const clearButton = makeElement("button", "clear-selection", "Ryd valg");
+          clearButton.type = "button";
+          clearButton.addEventListener("click", () => clearSelection({ returnFocus: true }));
+          actions.append(clearButton);
+          panel.append(actions);
+        }
+      }
+
+      function emitChange() {
+        // Listen on #risk-matrix or document for this bubbling integration event.
+        interactiveRoot.dispatchEvent(new CustomEvent("riskmatrix:change", {
+          bubbles: true,
+          detail: {
+            selection: copySelection(currentSelection),
+            selected: currentSelection !== null
+          }
+        }));
+      }
+
+      function applySelection(button) {
+        selectedButton = button;
+        currentSelection = readButton(button);
+
+        scoreButtons.forEach((item) => {
+          const isSelected = item === button;
+          item.classList.toggle("is-selected", isSelected);
+          item.setAttribute("aria-pressed", String(isSelected));
+          item.tabIndex = isSelected ? 0 : -1;
+        });
+
+        const readonlyScores = Array.from(readonlyGrid.querySelectorAll(".readonly-score"));
+        const targetIndex = scoreButtons.indexOf(button);
+        readonlyScores.forEach((item, index) => {
+          item.classList.toggle("is-selected", index === targetIndex);
+        });
+
+        renderAssessment(interactiveAssessment, currentSelection, true);
+        renderAssessment(readonlyAssessment, currentSelection, false);
+        emitChange();
+      }
+
+      function clearSelection(options = {}) {
+        const shouldReturnFocus = Boolean(options.returnFocus);
+        scoreButtons.forEach((item) => {
+          item.classList.remove("is-selected");
+          item.setAttribute("aria-pressed", "false");
+        });
+        readonlyGrid.querySelectorAll(".readonly-score.is-selected").forEach((item) => {
+          item.classList.remove("is-selected");
+        });
+
+        selectedButton = null;
+        currentSelection = null;
+        renderAssessment(interactiveAssessment, null, true);
+        renderAssessment(readonlyAssessment, null, false);
+        emitChange();
+
+        if (shouldReturnFocus && scoreButtons[0]) {
+          scoreButtons[0].focus({ preventScroll: true });
+        }
+      }
+
+      scoreButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          if (button === selectedButton) {
+            clearSelection();
+          } else {
+            applySelection(button);
+          }
+        });
+
+        button.addEventListener("focus", () => {
+          // Roving tabindex: one matrix cell is in the normal Tab sequence.
+          scoreButtons.forEach((item) => {
+            item.tabIndex = item === button ? 0 : -1;
+          });
+        });
+      });
+
+      // Arrow keys move through the 3 x 3 score area. Enter/Space retain the
+      // native button behavior, and Home/End move within a row.
+      interactiveGrid.addEventListener("keydown", (event) => {
+        const button = event.target.closest(".score-cell");
+        if (!button) return;
+
+        const index = scoreButtons.indexOf(button);
+        let nextIndex = index;
+        const row = Math.floor(index / 3);
+        const column = index % 3;
+
+        switch (event.key) {
+          case "ArrowLeft": nextIndex = column > 0 ? index - 1 : index; break;
+          case "ArrowRight": nextIndex = column < 2 ? index + 1 : index; break;
+          case "ArrowUp": nextIndex = row > 0 ? index - 3 : index; break;
+          case "ArrowDown": nextIndex = row < 2 ? index + 3 : index; break;
+          case "Home": nextIndex = event.ctrlKey ? 0 : row * 3; break;
+          case "End": nextIndex = event.ctrlKey ? scoreButtons.length - 1 : row * 3 + 2; break;
+          default: return;
+        }
+
+        event.preventDefault();
+        scoreButtons[nextIndex].focus();
+      });
+
+      // Public integration API. Since scores repeat, setSelection addresses
+      // a cell by likelihoodLevel + consequenceValue, not by score alone.
+      //
+      // Examples for a host application:
+      //   window.RiskMatrix.setSelection({ likelihoodLevel: 2, consequenceValue: 3 });
+      //   const selected = window.RiskMatrix.getSelection();
+      //   window.RiskMatrix.clearSelection();
+      //   document.getElementById("risk-matrix").addEventListener("riskmatrix:change", (event) => {
+      //     console.log(event.detail.selection); // null when cleared
+      //   });
+      // The event selection contains score, likelihoodLevel/Label,
+      // consequenceValue/Label, and the selected cell color.
+      window.RiskMatrix = Object.freeze({
+        getSelection() {
+          return copySelection(currentSelection);
+        },
+        setSelection({ likelihoodLevel, consequenceValue } = {}) {
+          const button = scoreButtons.find((item) =>
+            Number(item.dataset.likelihoodLevel) === Number(likelihoodLevel) &&
+            Number(item.dataset.consequenceValue) === Number(consequenceValue)
+          );
+          if (!button) return false;
+          applySelection(button);
+          return true;
+        },
+        clearSelection() {
+          clearSelection();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
